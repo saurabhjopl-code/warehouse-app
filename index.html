@@ -25,21 +25,23 @@
       <div>Stage: <span id="stageLabel"></span></div>
     </header>
 
-    <!-- STAGE CONTENT -->
     <div id="stageContent"></div>
 
-    <!-- CAMERA BOX (REQUIRED) -->
+    <!-- CAMERA -->
     <div id="cameraBox" class="hidden">
       <video id="video" autoplay playsinline></video>
+      <canvas id="canvas" hidden></canvas>
     </div>
 
-    <!-- PENDING DATA -->
     <h3>Pending Data</h3>
     <div id="pendingTable"></div>
 
   </div>
 </div>
 
+<!-- ZXING (REQUIRED) -->
+<script src="https://unpkg.com/@zxing/library@0.21.3"></script>
 <script src="app.js"></script>
+
 </body>
 </html>
