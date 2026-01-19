@@ -25,10 +25,15 @@
       <div>Stage: <span id="stageLabel"></span></div>
     </header>
 
-    <!-- STAGE CONTENT -->
     <div id="stageContent"></div>
 
-    <!-- PENDING DATA (ALWAYS VISIBLE) -->
+    <!-- CAMERA -->
+    <div id="cameraBox" class="hidden">
+      <video id="video" autoplay playsinline></video>
+      <button onclick="stopCamera()">Stop Camera</button>
+    </div>
+
+    <!-- PENDING DATA -->
     <h3>Pending Data</h3>
     <div id="pendingTable"></div>
 
