@@ -2,6 +2,8 @@
  GLOBAL STATE
 *************************/
 const STORAGE_KEY = "warehouse_app_state";
+const GOOGLE_SCRIPT_URL =
+  "https://script.google.com/macros/s/AKfycbx4PhWYeVrR-Mfzu6UcGrAKObE-zSmooUlmdjZnaq1ElQ5l_KlrSVZqY5tpggo1-cn2/exec";
 
 let appState = {
   userId: "",
@@ -25,11 +27,15 @@ document.addEventListener("DOMContentLoaded", async () => {
 });
 
 /*************************
- BIN MASTER
+ LOAD BIN MASTER
 *************************/
 async function loadBins() {
-  const res = await fetch("bins.json");
-  validBins = await res.json();
+  try {
+    const res = await fetch("bins.json");
+    validBins = await res.json();
+  } catch (e) {
+    alert("Failed to load BIN master");
+  }
 }
 
 /*************************
@@ -46,7 +52,7 @@ function initBarcode() {
 }
 
 /*************************
- STATE
+ STATE MANAGEMENT
 *************************/
 function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(appState));
@@ -70,7 +76,10 @@ function resetToStage2() {
 *************************/
 function login() {
   const userId = document.getElementById("userIdInput").value.trim();
-  if (!userId) return alert("User ID required");
+  if (!userId) {
+    alert("User ID required");
+    return;
+  }
 
   appState.userId = userId;
   appState.stage = 2;
@@ -82,8 +91,13 @@ function login() {
  RENDER
 *************************/
 function render() {
-  document.getElementById("loginScreen").classList.toggle("hidden", !!appState.userId);
-  document.getElementById("mainScreen").classList.toggle("hidden", !appState.userId);
+  document
+    .getElementById("loginScreen")
+    .classList.toggle("hidden", !!appState.userId);
+
+  document
+    .getElementById("mainScreen")
+    .classList.toggle("hidden", !appState.userId);
 
   if (!appState.userId) return;
 
@@ -95,21 +109,25 @@ function render() {
 }
 
 /*************************
- STAGES
+ STAGE RENDERING
 *************************/
 function renderStage() {
   const el = document.getElementById("stageContent");
   el.innerHTML = "";
 
+  // STAGE 2 – SCAN BIN
   if (appState.stage === 2) {
     el.innerHTML = `
       <h3>Scan Bin</h3>
       <input id="binInput" placeholder="BIN ID">
       <button onclick="submitBin()">Submit Bin</button>
       <button onclick="startCamera('bin')">Scan BIN via Camera</button>
+      <br><br>
+      <button onclick="goToSubmit()">Submit Pending Data</button>
     `;
   }
 
+  // STAGE 3 – CONFIRM BIN
   if (appState.stage === 3) {
     el.innerHTML = `
       <h3>Active Bin: ${appState.activeBin}</h3>
@@ -118,6 +136,7 @@ function renderStage() {
     `;
   }
 
+  // STAGE 4 – SCAN SKU
   if (appState.stage === 4) {
     el.innerHTML = `
       <h3>Scanning SKU for Bin: ${appState.activeBin}</h3>
@@ -128,17 +147,32 @@ function renderStage() {
       <button onclick="resetToStage2()">Finish Bin</button>
     `;
   }
+
+  // STAGE 5 – SUBMIT
+  if (appState.stage === 5) {
+    el.innerHTML = `
+      <h3>Submit Data to Google Sheets</h3>
+      <button onclick="submitToGoogle()">Confirm Submit</button>
+      <button onclick="resetToStage2()">Cancel</button>
+    `;
+  }
 }
 
 /*************************
- CAMERA
+ CAMERA HANDLING
 *************************/
 async function startCamera(mode) {
-  if (!detector) return;
+  if (!detector) {
+    alert("Camera not supported");
+    return;
+  }
 
   document.getElementById("cameraBox").classList.remove("hidden");
 
-  stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+  stream = await navigator.mediaDevices.getUserMedia({
+    video: { facingMode: "environment" }
+  });
+
   const video = document.getElementById("video");
   video.srcObject = stream;
 
@@ -176,11 +210,14 @@ function stopCamera() {
 }
 
 /*************************
- BIN
+ BIN LOGIC
 *************************/
 function submitBin() {
   const bin = document.getElementById("binInput").value.trim();
-  if (!validBins.includes(bin)) return alert("Invalid BIN ID");
+  if (!validBins.includes(bin)) {
+    alert("Invalid BIN ID");
+    return;
+  }
 
   appState.activeBin = bin;
   appState.stage = 3;
@@ -189,7 +226,7 @@ function submitBin() {
 }
 
 /*************************
- SKU
+ SKU LOGIC
 *************************/
 function goToSkuScan() {
   appState.stage = 4;
@@ -201,7 +238,9 @@ function scanSku() {
   const sku = document.getElementById("skuInput").value.trim();
   if (!sku) return;
 
-  let row = appState.scans.find(r => r.binId === appState.activeBin && r.skuId === sku);
+  let row = appState.scans.find(
+    r => r.binId === appState.activeBin && r.skuId === sku
+  );
 
   if (row) {
     row.unit += 1;
@@ -221,13 +260,60 @@ function scanSku() {
 }
 
 /*************************
- TABLE
+ SUBMISSION FLOW
+*************************/
+function goToSubmit() {
+  if (appState.scans.length === 0) {
+    alert("No pending data to submit");
+    return;
+  }
+
+  appState.stage = 5;
+  saveState();
+  render();
+}
+
+async function submitToGoogle() {
+  const payload = appState.scans.map(r => ({
+    userId: appState.userId,
+    date: new Date().toLocaleDateString(),
+    binId: r.binId,
+    skuId: r.skuId,
+    scanCount: r.unit,
+    timestamp: r.timestamp
+  }));
+
+  try {
+    const res = await fetch(GOOGLE_SCRIPT_URL, {
+      method: "POST",
+      body: JSON.stringify(payload)
+    });
+
+    const result = await res.json();
+
+    if (result.success) {
+      appState.scans = [];
+      appState.activeBin = null;
+      appState.stage = 2;
+      saveState();
+      alert("Data submitted successfully");
+      render();
+    } else {
+      throw new Error(result.error);
+    }
+  } catch (err) {
+    alert("Submission failed. Data is still saved locally.");
+  }
+}
+
+/*************************
+ PENDING DATA TABLE
 *************************/
 function renderPendingTable() {
   const el = document.getElementById("pendingTable");
 
   if (appState.scans.length === 0) {
-    el.innerHTML = `<p>No pending data. All data submitted.</p>`;
+    el.innerHTML = "<p>No pending data. All data submitted.</p>";
     return;
   }
 
@@ -250,6 +336,6 @@ function renderPendingTable() {
     `;
   });
 
-  html += `</table>`;
+  html += "</table>";
   el.innerHTML = html;
 }
