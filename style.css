@@ -56,6 +56,12 @@ th {
   background: #eee;
 }
 
-.action-btn {
-  margin-right: 10px;
+#cameraBox {
+  margin-top: 15px;
+}
+
+video {
+  width: 100%;
+  max-height: 300px;
+  border: 1px solid #ccc;
 }
