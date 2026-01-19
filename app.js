@@ -16,9 +16,8 @@ let appState = {
 };
 
 let validBins = [];
-let detector = null;
-let stream = null;
-let scanInterval = null;
+let codeReader;
+let activeMode = null;
 
 /*************************
  INIT
@@ -26,12 +25,12 @@ let scanInterval = null;
 document.addEventListener("DOMContentLoaded", async () => {
   loadState();
   await loadBins();
-  initBarcode();
+  initScanner();
   render();
 });
 
 /*************************
- LOAD BIN MASTER
+ BIN MASTER
 *************************/
 async function loadBins() {
   const res = await fetch("bins.json");
@@ -39,17 +38,10 @@ async function loadBins() {
 }
 
 /*************************
- BARCODE INIT
+ ZXING INIT
 *************************/
-function initBarcode() {
-  if (!("BarcodeDetector" in window)) {
-    alert("Use Chrome on Android for barcode scanning");
-    return;
-  }
-
-  detector = new BarcodeDetector({
-    formats: ["code_128", "ean_13", "ean_8", "qr_code"]
-  });
+function initScanner() {
+  codeReader = new ZXing.BrowserMultiFormatReader();
 }
 
 /*************************
@@ -65,7 +57,7 @@ function loadState() {
 }
 
 function resetToStage2() {
-  stopCamera();
+  stopScanner();
   appState.stage = 2;
   appState.activeBin = null;
   saveState();
@@ -108,15 +100,13 @@ function renderStage() {
   const el = document.getElementById("stageContent");
   el.innerHTML = "";
 
-  // STAGE 2 – USER GESTURE REQUIRED
   if (appState.stage === 2) {
     el.innerHTML = `
       <h3>Scan BIN</h3>
-      <button onclick="startCamera('bin')">▶ Start BIN Scan</button>
+      <button onclick="startScan('bin')">▶ Start BIN Scan</button>
     `;
   }
 
-  // STAGE 3
   if (appState.stage === 3) {
     el.innerHTML = `
       <h3>Active Bin: ${appState.activeBin}</h3>
@@ -125,67 +115,53 @@ function renderStage() {
     `;
   }
 
-  // STAGE 4
   if (appState.stage === 4) {
     el.innerHTML = `
       <h3>Scanning SKU</h3>
       <button onclick="resetToStage2()">Finish Bin</button>
     `;
-    startCamera("sku");
+    startScan("sku");
   }
 
-  // STAGE 5
   if (appState.stage === 5) {
     el.innerHTML = `
       <h3>Submit Data</h3>
       <button onclick="submitToGoogle()">Confirm Submit</button>
-      <button onclick="resetToStage2()">Cancel</button>
     `;
   }
 }
 
 /*************************
- CAMERA (USER-GESTURE SAFE)
+ ZXING SCAN
 *************************/
-async function startCamera(mode) {
-  stopCamera();
+async function startScan(mode) {
+  stopScanner();
+  activeMode = mode;
 
   document.getElementById("cameraBox").classList.remove("hidden");
-  const video = document.getElementById("video");
 
-  stream = await navigator.mediaDevices.getUserMedia({
-    video: { facingMode: "environment" }
-  });
+  try {
+    const result = await codeReader.decodeFromVideoDevice(
+      null,
+      "video",
+      (result, err) => {
+        if (result) {
+          stopScanner();
+          const value = result.getText();
 
-  video.srcObject = stream;
-  await video.play();
-
-  scanInterval = setInterval(async () => {
-    if (!stream) return;
-
-    const codes = await detector.detect(video);
-    if (codes.length > 0) {
-      const value = codes[0].rawValue;
-      stopCamera();
-
-      if (mode === "bin") handleBinScan(value);
-      if (mode === "sku") handleSkuScan(value);
-    }
-  }, 300);
+          if (mode === "bin") handleBinScan(value);
+          if (mode === "sku") handleSkuScan(value);
+        }
+      }
+    );
+  } catch (e) {
+    alert("Camera error");
+  }
 }
 
-function stopCamera() {
+function stopScanner() {
   document.getElementById("cameraBox").classList.add("hidden");
-
-  if (scanInterval) {
-    clearInterval(scanInterval);
-    scanInterval = null;
-  }
-
-  if (stream) {
-    stream.getTracks().forEach(t => t.stop());
-    stream = null;
-  }
+  if (codeReader) codeReader.reset();
 }
 
 /*************************
@@ -232,7 +208,7 @@ function handleSkuScan(sku) {
 
   saveState();
   renderPendingTable();
-  startCamera("sku");
+  startScan("sku");
 }
 
 /*************************
