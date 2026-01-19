@@ -17,7 +17,7 @@
     <button onclick="login()">Login</button>
   </div>
 
-  <!-- MAIN APP -->
+  <!-- MAIN -->
   <div id="mainScreen" class="screen hidden">
 
     <header>
@@ -25,12 +25,12 @@
       <div>Stage: <span id="stageLabel"></span></div>
     </header>
 
+    <!-- STAGE CONTENT -->
     <div id="stageContent"></div>
 
-    <!-- CAMERA -->
+    <!-- CAMERA BOX (REQUIRED) -->
     <div id="cameraBox" class="hidden">
       <video id="video" autoplay playsinline></video>
-      <button onclick="stopCamera()">Stop Camera</button>
     </div>
 
     <!-- PENDING DATA -->
@@ -38,7 +38,6 @@
     <div id="pendingTable"></div>
 
   </div>
-
 </div>
 
 <script src="app.js"></script>
