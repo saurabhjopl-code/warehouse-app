@@ -1,10 +1,13 @@
 /*************************
- GLOBAL STATE
+ GLOBAL CONFIG
 *************************/
 const STORAGE_KEY = "warehouse_app_state";
 const GOOGLE_SCRIPT_URL =
   "https://script.google.com/macros/s/AKfycbx4PhWYeVrR-Mfzu6UcGrAKObE-zSmooUlmdjZnaq1ElQ5l_KlrSVZqY5tpggo1-cn2/exec";
 
+/*************************
+ STATE
+*************************/
 let appState = {
   userId: "",
   stage: 1,
@@ -30,29 +33,26 @@ document.addEventListener("DOMContentLoaded", async () => {
  LOAD BIN MASTER
 *************************/
 async function loadBins() {
-  try {
-    const res = await fetch("bins.json");
-    validBins = await res.json();
-  } catch (e) {
-    alert("Failed to load BIN master");
-  }
+  const res = await fetch("bins.json");
+  validBins = await res.json();
 }
 
 /*************************
  BARCODE INIT
 *************************/
 function initBarcode() {
-  if ("BarcodeDetector" in window) {
-    detector = new BarcodeDetector({
-      formats: ["code_128", "ean_13", "qr_code"]
-    });
-  } else {
-    alert("Barcode scanning not supported on this browser");
+  if (!("BarcodeDetector" in window)) {
+    alert("Barcode scanning not supported on this device");
+    return;
   }
+
+  detector = new BarcodeDetector({
+    formats: ["code_128", "ean_13", "qr_code"]
+  });
 }
 
 /*************************
- STATE MANAGEMENT
+ STATE HELPERS
 *************************/
 function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(appState));
@@ -76,10 +76,7 @@ function resetToStage2() {
 *************************/
 function login() {
   const userId = document.getElementById("userIdInput").value.trim();
-  if (!userId) {
-    alert("User ID required");
-    return;
-  }
+  if (!userId) return alert("User ID required");
 
   appState.userId = userId;
   appState.stage = 2;
@@ -91,12 +88,10 @@ function login() {
  RENDER
 *************************/
 function render() {
-  document
-    .getElementById("loginScreen")
+  document.getElementById("loginScreen")
     .classList.toggle("hidden", !!appState.userId);
 
-  document
-    .getElementById("mainScreen")
+  document.getElementById("mainScreen")
     .classList.toggle("hidden", !appState.userId);
 
   if (!appState.userId) return;
@@ -109,49 +104,40 @@ function render() {
 }
 
 /*************************
- STAGE RENDERING
+ STAGES
 *************************/
 function renderStage() {
   const el = document.getElementById("stageContent");
   el.innerHTML = "";
 
-  // STAGE 2 – SCAN BIN
+  // STAGE 2 – AUTO BIN SCAN
   if (appState.stage === 2) {
-    el.innerHTML = `
-      <h3>Scan Bin</h3>
-      <input id="binInput" placeholder="BIN ID">
-      <button onclick="submitBin()">Submit Bin</button>
-      <button onclick="startCamera('bin')">Scan BIN via Camera</button>
-      <br><br>
-      <button onclick="goToSubmit()">Submit Pending Data</button>
-    `;
+    el.innerHTML = `<h3>Scan BIN (Camera)</h3>`;
+    startCamera("bin");
   }
 
   // STAGE 3 – CONFIRM BIN
   if (appState.stage === 3) {
     el.innerHTML = `
       <h3>Active Bin: ${appState.activeBin}</h3>
-      <button onclick="goToSkuScan()">Scan SKU</button>
+      <button onclick="goToSkuScan()">Start SKU Scan</button>
       <button onclick="resetToStage2()">Close Bin</button>
     `;
   }
 
-  // STAGE 4 – SCAN SKU
+  // STAGE 4 – AUTO SKU SCAN
   if (appState.stage === 4) {
     el.innerHTML = `
-      <h3>Scanning SKU for Bin: ${appState.activeBin}</h3>
-      <input id="skuInput" placeholder="SKU ID">
-      <button onclick="scanSku()">Add SKU</button>
-      <button onclick="startCamera('sku')">Scan SKU via Camera</button>
-      <br><br>
+      <h3>Scanning SKU (Camera)</h3>
       <button onclick="resetToStage2()">Finish Bin</button>
     `;
+    startCamera("sku");
   }
 
   // STAGE 5 – SUBMIT
   if (appState.stage === 5) {
     el.innerHTML = `
-      <h3>Submit Data to Google Sheets</h3>
+      <h3>Submit Data</h3>
       <button onclick="submitToGoogle()">Confirm Submit</button>
       <button onclick="resetToStage2()">Cancel</button>
     `;
@@ -159,13 +145,12 @@ function renderStage() {
 }
 
 /*************************
- CAMERA HANDLING
+ CAMERA LOGIC
 *************************/
 async function startCamera(mode) {
-  if (!detector) {
-    alert("Camera not supported");
-    return;
-  }
+  if (!detector) return;
+
+  stopCamera();
 
   document.getElementById("cameraBox").classList.remove("hidden");
 
@@ -180,21 +165,17 @@ async function startCamera(mode) {
     if (!stream) return;
 
     const barcodes = await detector.detect(video);
+
     if (barcodes.length > 0) {
       const value = barcodes[0].rawValue;
       stopCamera();
 
-      if (mode === "bin") {
-        document.getElementById("binInput").value = value;
-        submitBin();
-      }
+      if (mode === "bin") handleBinScan(value);
+      if (mode === "sku") handleSkuScan(value);
 
-      if (mode === "sku") {
-        document.getElementById("skuInput").value = value;
-        scanSku();
-      }
       return;
     }
+
     requestAnimationFrame(scanLoop);
   };
 
@@ -203,6 +184,7 @@ async function startCamera(mode) {
 
 function stopCamera() {
   document.getElementById("cameraBox").classList.add("hidden");
+
   if (stream) {
     stream.getTracks().forEach(t => t.stop());
     stream = null;
@@ -210,12 +192,12 @@ function stopCamera() {
 }
 
 /*************************
- BIN LOGIC
+ BIN HANDLER
 *************************/
-function submitBin() {
-  const bin = document.getElementById("binInput").value.trim();
+function handleBinScan(bin) {
   if (!validBins.includes(bin)) {
-    alert("Invalid BIN ID");
+    alert("Invalid BIN scanned. Try again.");
+    startCamera("bin");
     return;
   }
 
@@ -226,7 +208,7 @@ function submitBin() {
 }
 
 /*************************
- SKU LOGIC
+ SKU HANDLER
 *************************/
 function goToSkuScan() {
   appState.stage = 4;
@@ -234,10 +216,7 @@ function goToSkuScan() {
   render();
 }
 
-function scanSku() {
-  const sku = document.getElementById("skuInput").value.trim();
-  if (!sku) return;
-
+function handleSkuScan(sku) {
   let row = appState.scans.find(
     r => r.binId === appState.activeBin && r.skuId === sku
   );
@@ -255,16 +234,18 @@ function scanSku() {
   }
 
   saveState();
-  document.getElementById("skuInput").value = "";
   renderPendingTable();
+
+  // AUTO RESTART CAMERA FOR NEXT SKU
+  startCamera("sku");
 }
 
 /*************************
- SUBMISSION FLOW
+ SUBMISSION
 *************************/
 function goToSubmit() {
   if (appState.scans.length === 0) {
-    alert("No pending data to submit");
+    alert("No pending data");
     return;
   }
 
@@ -291,23 +272,22 @@ async function submitToGoogle() {
 
     const result = await res.json();
 
-    if (result.success) {
-      appState.scans = [];
-      appState.activeBin = null;
-      appState.stage = 2;
-      saveState();
-      alert("Data submitted successfully");
-      render();
-    } else {
-      throw new Error(result.error);
-    }
-  } catch (err) {
-    alert("Submission failed. Data is still saved locally.");
+    if (!result.success) throw new Error();
+
+    appState.scans = [];
+    appState.activeBin = null;
+    appState.stage = 2;
+    saveState();
+    alert("Data submitted successfully");
+    render();
+
+  } catch {
+    alert("Submission failed. Data saved locally.");
   }
 }
 
 /*************************
- PENDING DATA TABLE
+ PENDING TABLE
 *************************/
 function renderPendingTable() {
   const el = document.getElementById("pendingTable");
