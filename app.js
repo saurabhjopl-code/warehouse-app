@@ -11,6 +11,8 @@ let appState = {
 };
 
 let validBins = [];
+let stream = null;
+let detector = null;
 
 /*************************
  INIT
@@ -18,23 +20,33 @@ let validBins = [];
 document.addEventListener("DOMContentLoaded", async () => {
   loadState();
   await loadBins();
+  initBarcode();
   render();
 });
 
 /*************************
- LOAD BIN MASTER
+ BIN MASTER
 *************************/
 async function loadBins() {
-  try {
-    const res = await fetch("bins.json");
-    validBins = await res.json();
-  } catch (e) {
-    alert("Failed to load BIN master");
+  const res = await fetch("bins.json");
+  validBins = await res.json();
+}
+
+/*************************
+ BARCODE INIT
+*************************/
+function initBarcode() {
+  if ("BarcodeDetector" in window) {
+    detector = new BarcodeDetector({
+      formats: ["code_128", "ean_13", "qr_code"]
+    });
+  } else {
+    alert("Barcode scanning not supported on this browser");
   }
 }
 
 /*************************
- STATE HELPERS
+ STATE
 *************************/
 function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(appState));
@@ -46,6 +58,7 @@ function loadState() {
 }
 
 function resetToStage2() {
+  stopCamera();
   appState.stage = 2;
   appState.activeBin = null;
   saveState();
@@ -82,7 +95,7 @@ function render() {
 }
 
 /*************************
- STAGE RENDERING
+ STAGES
 *************************/
 function renderStage() {
   const el = document.getElementById("stageContent");
@@ -91,15 +104,16 @@ function renderStage() {
   if (appState.stage === 2) {
     el.innerHTML = `
       <h3>Scan Bin</h3>
-      <input id="binInput" placeholder="Enter / Scan Bin ID">
+      <input id="binInput" placeholder="BIN ID">
       <button onclick="submitBin()">Submit Bin</button>
+      <button onclick="startCamera('bin')">Scan BIN via Camera</button>
     `;
   }
 
   if (appState.stage === 3) {
     el.innerHTML = `
       <h3>Active Bin: ${appState.activeBin}</h3>
-      <button class="action-btn" onclick="goToSkuScan()">Scan SKU</button>
+      <button onclick="goToSkuScan()">Scan SKU</button>
       <button onclick="resetToStage2()">Close Bin</button>
     `;
   }
@@ -107,31 +121,66 @@ function renderStage() {
   if (appState.stage === 4) {
     el.innerHTML = `
       <h3>Scanning SKU for Bin: ${appState.activeBin}</h3>
-      <input id="skuInput" placeholder="Enter / Scan SKU">
+      <input id="skuInput" placeholder="SKU ID">
       <button onclick="scanSku()">Add SKU</button>
+      <button onclick="startCamera('sku')">Scan SKU via Camera</button>
       <br><br>
-      <button class="action-btn" onclick="render()">Continue</button>
       <button onclick="resetToStage2()">Finish Bin</button>
-    `;
-  }
-
-  if (appState.stage === 5) {
-    el.innerHTML = `
-      <h3>Submit Data</h3>
-      <button onclick="submitToGoogle()">Submit to Google Drive</button>
     `;
   }
 }
 
 /*************************
- BIN LOGIC
+ CAMERA
+*************************/
+async function startCamera(mode) {
+  if (!detector) return;
+
+  document.getElementById("cameraBox").classList.remove("hidden");
+
+  stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+  const video = document.getElementById("video");
+  video.srcObject = stream;
+
+  const scanLoop = async () => {
+    if (!stream) return;
+
+    const barcodes = await detector.detect(video);
+    if (barcodes.length > 0) {
+      const value = barcodes[0].rawValue;
+      stopCamera();
+
+      if (mode === "bin") {
+        document.getElementById("binInput").value = value;
+        submitBin();
+      }
+
+      if (mode === "sku") {
+        document.getElementById("skuInput").value = value;
+        scanSku();
+      }
+      return;
+    }
+    requestAnimationFrame(scanLoop);
+  };
+
+  scanLoop();
+}
+
+function stopCamera() {
+  document.getElementById("cameraBox").classList.add("hidden");
+  if (stream) {
+    stream.getTracks().forEach(t => t.stop());
+    stream = null;
+  }
+}
+
+/*************************
+ BIN
 *************************/
 function submitBin() {
   const bin = document.getElementById("binInput").value.trim();
-
-  if (!validBins.includes(bin)) {
-    return alert("Invalid BIN ID");
-  }
+  if (!validBins.includes(bin)) return alert("Invalid BIN ID");
 
   appState.activeBin = bin;
   appState.stage = 3;
@@ -140,7 +189,7 @@ function submitBin() {
 }
 
 /*************************
- SKU LOGIC
+ SKU
 *************************/
 function goToSkuScan() {
   appState.stage = 4;
@@ -150,11 +199,9 @@ function goToSkuScan() {
 
 function scanSku() {
   const sku = document.getElementById("skuInput").value.trim();
-  if (!sku) return alert("SKU required");
+  if (!sku) return;
 
-  let row = appState.scans.find(
-    r => r.binId === appState.activeBin && r.skuId === sku
-  );
+  let row = appState.scans.find(r => r.binId === appState.activeBin && r.skuId === sku);
 
   if (row) {
     row.unit += 1;
@@ -174,7 +221,7 @@ function scanSku() {
 }
 
 /*************************
- PENDING TABLE
+ TABLE
 *************************/
 function renderPendingTable() {
   const el = document.getElementById("pendingTable");
@@ -205,11 +252,4 @@ function renderPendingTable() {
 
   html += `</table>`;
   el.innerHTML = html;
-}
-
-/*************************
- GOOGLE SUBMIT (PLACEHOLDER)
-*************************/
-function submitToGoogle() {
-  alert("Google submission will be added next step");
 }
