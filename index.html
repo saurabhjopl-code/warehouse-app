@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Warehouse Management Tool</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="app">
+
+  <!-- LOGIN -->
+  <div id="loginScreen" class="screen">
+    <h2>Login</h2>
+    <input type="text" id="userIdInput" placeholder="Enter User ID" />
+    <button onclick="login()">Login</button>
+  </div>
+
+  <!-- MAIN APP -->
+  <div id="mainScreen" class="screen hidden">
+
+    <header>
+      <div>User: <span id="userLabel"></span></div>
+      <div>Stage: <span id="stageLabel"></span></div>
+    </header>
+
+    <!-- STAGE CONTENT -->
+    <div id="stageContent"></div>
+
+    <!-- PENDING DATA (ALWAYS VISIBLE) -->
+    <h3>Pending Data</h3>
+    <div id="pendingTable"></div>
+
+  </div>
+
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
